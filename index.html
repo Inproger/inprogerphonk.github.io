@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phonk Visualizer - Dönen Resim & Efektler</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: linear-gradient(135deg, #141e30, #243b55);
+      font-family: 'Arial', sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input[type="file"] {
+      background-color: rgba(255,255,255,0.9);
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 0px 2px 4px rgba(0,0,0,0.3);
+    }
+    audio {
+      margin-top: 10px;
+      background: rgba(255,255,255,0.8);
+      border-radius: 5px;
+      padding: 5px;
+      box-shadow: 0px 2px 4px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <input type="file" id="audioFile" accept="audio/*">
+    <input type="file" id="imageFile" accept="image/*">
+    <audio id="audioElement" controls></audio>
+  </div>
+  <canvas id="visualizer"></canvas>
+  <script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+    
+    const audioFileInput = document.getElementById('audioFile');
+    const imageFileInput = document.getElementById('imageFile');
+    const audioElement = document.getElementById('audioElement');
+    
+    let audioContext, analyser, sourceNode;
+    let centerImage = null;
+    let baseHue = 0;
+    let rotationAngle = 0;
+    let imageRotation = 0;
+    
+    // Resim dosyası seçimi: Ortada gösterilecek dairesel resim
+    imageFileInput.addEventListener('change', function() {
+      const file = this.files[0];
+      if (!file) return;
+      const fileURL = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = fileURL;
+      img.onload = () => {
+        centerImage = img;
+      };
+    });
+    
+    // Müzik dosyası seçimi ve ses analiz başlatma
+    audioFileInput.addEventListener('change', function() {
+      const file = this.files[0];
+      if (!file) return;
+      const fileURL = URL.createObjectURL(file);
+      audioElement.src = fileURL;
+      audioElement.load();
+      audioElement.play();
+      
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (sourceNode) {
+        sourceNode.disconnect();
+      }
+      sourceNode = audioContext.createMediaElementSource(audioElement);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      sourceNode.connect(analyser);
+      analyser.connect(audioContext.destination);
+      
+      animate();
+    });
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      // Yarı şeffaf dolgu ile trail efekti
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      if (!analyser) return;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
+      const avgFrequency = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
+      
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      
+      // Halo efekti: Ortadaki resmin etrafında, ses verisine göre genişleyen efekt
+      const haloRadius = Math.max(80, avgFrequency * 1.2);
+      ctx.save();
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = 'rgba(255, 20, 147, 0.7)';
+      const haloGradient = ctx.createRadialGradient(centerX, centerY, haloRadius * 0.2, centerX, centerY, haloRadius);
+      haloGradient.addColorStop(0, 'rgba(255, 20, 147, 0.8)');
+      haloGradient.addColorStop(1, 'rgba(75, 0, 130, 0)');
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, haloRadius, 0, Math.PI * 2);
+      ctx.fillStyle = haloGradient;
+      ctx.fill();
+      ctx.restore();
+      
+      // Rotating daireler: Resmin etrafında dönen, renk değiştiren küçük daireler
+      const numCircles = 8;
+      rotationAngle += 0.01;
+      for (let i = 0; i < numCircles; i++) {
+        const angle = (i / numCircles) * Math.PI * 2 + rotationAngle;
+        const ringRadius = haloRadius + 30;
+        const x = centerX + Math.cos(angle) * ringRadius;
+        const y = centerY + Math.sin(angle) * ringRadius;
+        ctx.beginPath();
+        ctx.arc(x, y, 15 + (avgFrequency / 70), 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${(baseHue + i * 40) % 360}, 80%, 50%, 0.8)`;
+        ctx.fill();
+      }
+      baseHue = (baseHue + 0.5) % 360;
+      
+      // Ortada dairesel ve kendi etrafında dönen resim
+      if (centerImage) {
+        const imageRadius = 80; // Resmin yarıçapı
+        imageRotation += 0.01; // Resmin kendi etrafında dönüş açısı
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(imageRotation);
+        // Dairesel clip oluştur
+        ctx.beginPath();
+        ctx.arc(0, 0, imageRadius, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        // Resmi, merkezde olacak şekilde çiz
+        ctx.drawImage(centerImage, -imageRadius, -imageRadius, imageRadius * 2, imageRadius * 2);
+        ctx.restore();
+      }
+    }
+  </script>
+</body>
+</html>
