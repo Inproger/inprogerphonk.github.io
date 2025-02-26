@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Phonk Visualizer - Dönen Resim & Efektler</title>
+  <title>Phonk Visualizer - Çoklu Müzik & Resim Efektli</title>
   <style>
     body {
       margin: 0;
@@ -23,7 +23,7 @@
       flex-direction: column;
       gap: 10px;
     }
-    input[type="file"] {
+    #controls input {
       background-color: rgba(255,255,255,0.9);
       border: none;
       padding: 8px 12px;
@@ -43,7 +43,8 @@
 </head>
 <body>
   <div id="controls">
-    <input type="file" id="audioFile" accept="audio/*">
+    <!-- Birden fazla müzik dosyası seçilebilsin -->
+    <input type="file" id="musicFiles" accept="audio/*" multiple>
     <input type="file" id="imageFile" accept="image/*">
     <audio id="audioElement" controls></audio>
   </div>
@@ -59,15 +60,53 @@
       canvas.height = window.innerHeight;
     });
     
-    const audioFileInput = document.getElementById('audioFile');
+    const musicFileInput = document.getElementById('musicFiles');
     const imageFileInput = document.getElementById('imageFile');
     const audioElement = document.getElementById('audioElement');
     
     let audioContext, analyser, sourceNode;
+    let playlist = []; // Seçilen müzik dosyalarını burada tutacağız
+    let currentTrackIndex = 0;
+    
     let centerImage = null;
     let baseHue = 0;
     let rotationAngle = 0;
     let imageRotation = 0;
+    
+    // Müzik dosyaları seçildiğinde playlist'i oluştur ve ilk şarkıyı yükle
+    musicFileInput.addEventListener('change', function() {
+      if (this.files.length === 0) return;
+      playlist = Array.from(this.files);
+      currentTrackIndex = 0;
+      loadTrack(currentTrackIndex);
+    });
+    
+    // Belirtilen indeksteki şarkıyı yük ve çal
+    function loadTrack(index) {
+      const fileURL = URL.createObjectURL(playlist[index]);
+      audioElement.src = fileURL;
+      audioElement.load();
+      audioElement.play();
+    }
+    
+    // Şarkı bittiğinde sıradakine geç
+    audioElement.addEventListener("ended", () => {
+      currentTrackIndex = (currentTrackIndex + 1) % playlist.length;
+      loadTrack(currentTrackIndex);
+    });
+    
+    // Audio çalmaya başladığında AudioContext ve analizörü oluştur
+    audioElement.addEventListener("play", () => {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        sourceNode = audioContext.createMediaElementSource(audioElement);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        sourceNode.connect(analyser);
+        analyser.connect(audioContext.destination);
+        animate();
+      }
+    });
     
     // Resim dosyası seçimi: Ortada gösterilecek dairesel resim
     imageFileInput.addEventListener('change', function() {
@@ -79,30 +118,6 @@
       img.onload = () => {
         centerImage = img;
       };
-    });
-    
-    // Müzik dosyası seçimi ve ses analiz başlatma
-    audioFileInput.addEventListener('change', function() {
-      const file = this.files[0];
-      if (!file) return;
-      const fileURL = URL.createObjectURL(file);
-      audioElement.src = fileURL;
-      audioElement.load();
-      audioElement.play();
-      
-      if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (sourceNode) {
-        sourceNode.disconnect();
-      }
-      sourceNode = audioContext.createMediaElementSource(audioElement);
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 1024;
-      sourceNode.connect(analyser);
-      analyser.connect(audioContext.destination);
-      
-      animate();
     });
     
     function animate() {
@@ -135,7 +150,7 @@
       ctx.fill();
       ctx.restore();
       
-      // Rotating daireler: Resmin etrafında dönen, renk değiştiren küçük daireler
+      // Resmin etrafında dönen renkli daireler
       const numCircles = 8;
       rotationAngle += 0.01;
       for (let i = 0; i < numCircles; i++) {
@@ -150,19 +165,17 @@
       }
       baseHue = (baseHue + 0.5) % 360;
       
-      // Ortada dairesel ve kendi etrafında dönen resim
+      // Ortada, dairesel ve kendi etrafında dönen resim
       if (centerImage) {
-        const imageRadius = 80; // Resmin yarıçapı
-        imageRotation += 0.01; // Resmin kendi etrafında dönüş açısı
+        const imageRadius = 80;
+        imageRotation += 0.01;
         ctx.save();
         ctx.translate(centerX, centerY);
         ctx.rotate(imageRotation);
-        // Dairesel clip oluştur
         ctx.beginPath();
         ctx.arc(0, 0, imageRadius, 0, Math.PI * 2);
         ctx.closePath();
         ctx.clip();
-        // Resmi, merkezde olacak şekilde çiz
         ctx.drawImage(centerImage, -imageRadius, -imageRadius, imageRadius * 2, imageRadius * 2);
         ctx.restore();
       }
